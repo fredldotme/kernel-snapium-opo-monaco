@@ -1641,7 +1641,9 @@ static int sdhci_msm_dt_parse_vreg_info(struct device *dev,
 	snprintf(prop_name, MAX_PROP_SIZE, "%s-supply", vreg_name);
 	if (!of_parse_phandle(np, prop_name, 0)) {
 		dev_info(dev, "No vreg data found for %s\n", vreg_name);
+#if !IS_ENABLED(CONFIG_BCMDHD)
 		ret = -ENOENT;
+#endif
 		return ret;
 	}
 
@@ -4974,6 +4976,30 @@ static void partial_init(void *unused, struct mmc_host *host, bool *partial_init
 
 }
 
+#if IS_ENABLED(CONFIG_BCMDHD)
+void sdhci_msm_card_detect(int slot, unsigned long delay, bool present)
+{
+	struct sdhci_msm_host *host = NULL;
+	struct mmc_host *mmc = NULL;
+	(void)present;
+
+	pr_info("sdhci_msm_card_detect,slot=%d\n",slot);
+	if (slot > 1)
+		pr_err("slot index out of range: %d", slot);
+
+	host = sdhci_slot[slot];
+	if (!host)
+		pr_err("no such sdhci slot");
+
+	mmc = host->mmc;
+	if (!mmc_card_is_removable(mmc))
+		mmc->rescan_entered = 0;
+
+	mmc_detect_change(mmc, delay);
+}
+EXPORT_SYMBOL(sdhci_msm_card_detect);
+#endif
+
 static int sdhci_msm_probe(struct platform_device *pdev)
 {
 	struct sdhci_host *host;
@@ -5347,7 +5373,11 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 	if (msm_host->mmc->card && mmc_card_sdio(msm_host->mmc->card))
 		register_trace_android_vh_mmc_sdio_pm_flag_set(sdhci_msm_set_sdio_pm_flag, NULL);
 
+#if IS_ENABLED(CONFIG_BCMDHD)
+	if ((host->mmc->caps & MMC_CAP_NONREMOVABLE) && of_property_read_bool(node, "supports-cqe")) {
+#else
 	if (host->mmc->caps & MMC_CAP_NONREMOVABLE) {
+#endif
 		register_trace_android_rvh_mmc_cache_card_properties(mmc_cache_card, NULL);
 		register_trace_android_rvh_partial_init(partial_init, NULL);
 	}

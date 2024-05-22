@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# Copyright (C) 2018-2023 Oplus. All rights reserved.
+
+menu "OPLUS's custom device support"
+	depends on !UML
+
+config REGULATOR_FAN49103
+	tristate "Fairchild FAN49103 Regulator"
+	depends on I2C
+	help
+	  This driver supports Fairchild FAN49103 Digitally Programmable
+	  TinyBuck Regulator. The FAN49103 is a step-down switching voltage
+	  regulator that delivers a digitally programmable output from an
+	  input voltage supply of 2.8V to 4V. The output voltage is
+	  programmed through an I2C interface.
+
+source "drivers/oplus/boot/Kconfig"
+
+source "drivers/oplus/snshub/Kconfig"
+
+source "drivers/oplus/feedback/Kconfig"
+
+source "drivers/oplus/net/Kconfig"
+
+source "drivers/oplus/aw86927_haptic/Kconfig"
+source "drivers/oplus/startup_monitor/Kconfig"
+endmenu

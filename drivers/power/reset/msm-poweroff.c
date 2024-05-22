@@ -516,7 +516,6 @@ static void do_msm_poweroff(void)
 
 	set_dload_mode(0);
 	qpnp_pon_system_pwr_off(PON_POWER_OFF_SHUTDOWN);
-
 	deassert_ps_hold();
 
 	msleep(10000);

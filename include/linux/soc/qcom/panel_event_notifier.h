@@ -40,6 +40,7 @@ struct panel_event_notification_data {
 	u32 old_fps;
 	u32 new_fps;
 	bool early_trigger;
+	u32 data;  //vendor display add
 };
 
 struct panel_event_notification {

@@ -119,6 +119,7 @@ struct device_node *of_batterydata_get_best_profile(
 
 	rc = of_property_read_string(best_node, "qcom,battery-type",
 							&battery_type);
+
 	if (!rc)
 		pr_info("%s found\n", battery_type);
 	else

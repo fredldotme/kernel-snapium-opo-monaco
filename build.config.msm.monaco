@@ -5,6 +5,7 @@
 
 ################################################################################
 ## Variant setup
+TARGET=monaco
 MSM_ARCH=monaco
 VARIANTS=(consolidate gki)
 [ -z "${VARIANT}" ] && VARIANT=consolidate
@@ -20,6 +21,26 @@ SUPER_IMAGE_SIZE=0x10000000
 TRIM_UNUSED_MODULES=1
 BUILD_INIT_BOOT_IMG=1
 MODULES_LIST_ORDER="1"
+
+#KERNEL_MODULES_SRC=../vendor/qcom/opensource/monaco
+#KERNEL_MODULES_SRC=./msm-qcom-cw-modules
+#EXT_MODULES=""
+#${KERNEL_MODULES_SRC}/display-drivers
+#${KERNEL_MODULES_SRC}/graphics-kernel
+#${KERNEL_MODULES_SRC}/securemsm-kernel
+#${KERNEL_MODULES_SRC}/video-driver
+#${KERNEL_MODULES_SRC}/audio-kernel
+#${KERNEL_MODULES_SRC}/datarmnet/core
+#${KERNEL_MODULES_SRC}/datarmnet-ext/wlan
+#${KERNEL_MODULES_SRC}/dataipa/drivers/platform/msm
+#${KERNEL_MODULES_SRC}/driver
+#${KERNEL_MODULES_SRC}/touch-drivers
+
+#${KERNEL_SRC}/msm-qcom-cw-modules/bt-kernel
+#${KERNEL_SRC}/msm-qcom-cw-modules/wlan
+#${KERNEL_SRC}/msm-qcom-cw-modules/qcacld-3.0
+
+WLAN_WEAR_CHIPSET=qca_cld3
 
 [ -z "${DT_OVERLAY_SUPPORT}" ] && DT_OVERLAY_SUPPORT=1
 

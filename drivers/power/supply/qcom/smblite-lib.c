@@ -39,6 +39,12 @@
 				__func__, ##__VA_ARGS__);	\
 	} while (0)
 
+extern bool charger_log_enable;
+extern int CHG_I;
+bool smooth_soc = true;
+static int oplus_bark_cnt = 0;
+extern void oplus_power_supply_changed(struct power_supply *psy);
+
 #define typec_rp_med_high(chg, typec_mode)			\
 	((typec_mode == QTI_POWER_SUPPLY_TYPEC_SOURCE_MEDIUM	\
 	|| typec_mode == QTI_POWER_SUPPLY_TYPEC_SOURCE_HIGH)	\
@@ -502,8 +508,7 @@ static const struct apsd_result *smblite_lib_update_usb_type(struct smb_charger 
 		chg->real_charger_type = apsd_result->val;
 
 	smblite_update_usb_desc(chg);
-
-	smblite_lib_dbg(chg, PR_MISC, "APSD=%s, real_charger_type =%d\n",
+	pr_info("APSD=%s, real_charger_type =%d\n",
 			apsd_result->name, chg->real_charger_type);
 
 	return apsd_result;
@@ -543,6 +548,8 @@ static int smblite_lib_register_notifier(struct smb_charger *chg)
 
 bool is_concurrent_mode_supported(struct smb_charger *chg)
 {
+	if (chg->chg_limit == CHG_LIMIT_SELLMODE)
+		chg->concurrent_mode_supported = false;
 	return (chg->concurrent_mode_supported && chg->subtype == PM5100);
 }
 
@@ -1055,15 +1062,9 @@ int smblite_lib_get_prop_batt_status(struct smb_charger *chg,
 	stat = stat & BATTERY_CHARGER_STATUS_MASK;
 
 	if (!usb_online) {
-		switch (stat) {
-		case TERMINATE_CHARGE:
-		case INHIBIT_CHARGE:
-			val->intval = POWER_SUPPLY_STATUS_FULL;
-			break;
-		default:
-			val->intval = POWER_SUPPLY_STATUS_DISCHARGING;
-			break;
-		}
+		val->intval = POWER_SUPPLY_STATUS_DISCHARGING;
+		if (charger_log_enable)
+			pr_info("usb not online\n");
 		return rc;
 	}
 
@@ -1189,6 +1190,17 @@ int smblite_lib_get_prop_batt_health(struct smb_charger *chg,
 				goto done;
 			}
 		}
+	}
+
+	rc = smblite_lib_read(chg, BATTERY_CHARGER_STATUS_1_REG(chg->base), &stat);
+	if (rc < 0) {
+		smblite_lib_err(chg, "Couldn't read BATTERY_CHARGER_STATUS_1_REG rc=%d\n",rc);
+		return rc;
+	}
+	if (stat & BIT(5)) {
+		val->intval = POWER_SUPPLY_HEALTH_SAFETY_TIMER_EXPIRE;
+		smblite_lib_dbg(chg, PR_REGISTER, "charge safety timer expired\n");
+		goto done;
 	}
 
 	rc = smblite_lib_read(chg, BATTERY_TEMP_STATUS_REG(chg->base), &stat);
@@ -1365,7 +1377,7 @@ int smblite_lib_get_batt_current_now(struct smb_charger *chg,
 	else
 		smblite_lib_err(chg, "Couldn't get current_now prop rc=%d\n",
 					rc);
-
+	CHG_I = *val;
 	return rc;
 }
 
@@ -1986,6 +1998,23 @@ static int smblite_lib_read_usbin_voltage_chan(struct smb_charger *chg,
 	return 0;
 }
 
+int smblite_lib_read_usbin_current(struct smb_charger *chg,
+				     union power_supply_propval *val)
+{
+	int rc;
+
+	if (!chg->iio.usbin_i_chan)
+		return -ENODATA;
+
+	rc = iio_read_channel_processed(chg->iio.usbin_i_chan, &val->intval);
+	if (rc < 0) {
+		smblite_lib_err(chg, "Couldn't read USBIN I channel rc=%d\n", rc);
+		return rc;
+	}
+
+	return 0;
+}
+
 int smblite_lib_get_prop_usb_voltage_now(struct smb_charger *chg,
 				    union power_supply_propval *val)
 {
@@ -2358,7 +2387,8 @@ int smblite_lib_set_prop_current_max(struct smb_charger *chg,
 			val->intval, chg->real_charger_type);
 
 	if (chg->real_charger_type == QTI_POWER_SUPPLY_TYPE_USB_FLOAT) {
-		if (val->intval == -ETIMEDOUT) {
+
+		if ((val->intval == -ETIMEDOUT) || (val->intval == 2000)) {
 			if ((chg->float_cfg & FLOAT_OPTIONS_MASK)
 						== FORCE_FLOAT_SDP_CFG_BIT) {
 				/*
@@ -2480,8 +2510,9 @@ int smblite_lib_set_prop_ship_mode(struct smb_charger *chg,
 				const int val)
 {
 	int rc;
-
-	smblite_lib_dbg(chg, PR_MISC, "Set ship mode: %d!!\n", !!val);
+	extern set_shipmode_shutdown(int);
+	set_shipmode_shutdown(val);
+	pr_err("Set ship mode: %d!!\n", !!val);
 
 	rc = smblite_lib_masked_write(chg, SHIP_MODE_REG(chg->base), SHIP_MODE_EN_BIT,
 			!!val ? SHIP_MODE_EN_BIT : 0);
@@ -3215,14 +3246,22 @@ static void smblite_lib_usb_plugin_locked(struct smb_charger *chg)
 			smblite_lib_err(chg, "Couldn't to disable DPDM rc=%d\n", rc);
 	}
 
+	if (chg->chg_limit == CHG_LIMIT_SELLMODE) {
+		rc = smblite_lib_masked_write(chg, USB_CMD_PULLDOWN_REG(chg->base),
+									EN_PULLDOWN_USB_IN_BIT,
+									vbus_rising ? 0 : EN_PULLDOWN_USB_IN_BIT);
+		if (rc < 0)
+			smblite_lib_err(chg, "Couldn't configure pulldown on USB_IN rc=%d", rc);
+	}
+
 	if (chg->connector_type == QTI_POWER_SUPPLY_CONNECTOR_MICRO_USB)
 		smblite_lib_micro_usb_plugin(chg, vbus_rising);
 
 	vote(chg->temp_change_irq_disable_votable, DEFAULT_VOTER,
 						!vbus_rising, 0);
 	power_supply_changed(chg->usb_psy);
-	smblite_lib_dbg(chg, PR_INTERRUPT, "IRQ: usbin-plugin %s\n",
-					vbus_rising ? "attached" : "detached");
+
+	pr_info("IRQ: usbin-plugin %s\n",vbus_rising ? "attached" : "detached");
 }
 
 irqreturn_t smblite_usb_plugin_irq_handler(int irq, void *data)
@@ -3290,8 +3329,9 @@ static void update_sw_icl_max(struct smb_charger *chg,
 		 * limit ICL to 100mA, the USB driver will enumerate to check
 		 * if this is a SDP and appropriately set the current
 		 */
+
 		vote(chg->usb_icl_votable, SW_ICL_MAX_VOTER, true,
-						USBIN_100UA);
+						CDP_CURRENT_UA);
 		break;
 	case POWER_SUPPLY_TYPE_UNKNOWN:
 	default:
@@ -3970,7 +4010,10 @@ irqreturn_t smblite_wdog_bark_irq_handler(int irq, void *data)
 	if (rc < 0)
 		smblite_lib_err(chg, "Couldn't pet the dog rc=%d\n", rc);
 
-	power_supply_changed(chg->batt_psy);
+	if (((++oplus_bark_cnt) % 3) == 0) {
+		oplus_bark_cnt = 0;
+		oplus_power_supply_changed(chg->batt_psy);
+	}
 
 	return IRQ_HANDLED;
 }
@@ -4131,7 +4174,9 @@ static void bms_update_work(struct work_struct *work)
 	smblite_lib_suspend_on_debug_battery(chg);
 
 	if (chg->batt_psy)
-		power_supply_changed(chg->batt_psy);
+	{
+		oplus_power_supply_changed(chg->batt_psy);
+	}
 }
 
 static void smblite_lib_icl_change_work(struct work_struct *work)
@@ -4149,8 +4194,49 @@ static void smblite_lib_icl_change_work(struct work_struct *work)
 
 	power_supply_changed(chg->batt_psy);
 
-	smblite_lib_dbg(chg, PR_INTERRUPT, "icl_settled=%d\n", settled_ua);
+	if(charger_log_enable)
+		pr_info("icl_settled=%d\n", settled_ua);
 }
+
+extern bool limit_maxvol;
+static void soc_work(struct work_struct *work)
+{
+	struct smb_charger *chg = container_of(work, struct smb_charger, soc_work.work);
+
+	if ((chg->batt_status == POWER_SUPPLY_STATUS_FULL) && (!limit_maxvol)) {
+		/* soc++, if full, but soc is not 100 */
+		if ((smooth_soc) && (chg->ui_soc < 100)) {
+			smooth_soc = false;
+			chg->ui_soc++;
+			power_supply_changed(chg->batt_psy);
+			smooth_soc = true;
+			if(charger_log_enable)
+				pr_info("soc_work full,++");
+		}
+		return;
+	}
+
+	if ((chg->batt_status != POWER_SUPPLY_STATUS_CHARGING) && (chg->ui_soc > 0)
+		&& ((chg->batt_vol <= 3360000) || (chg->ui_soc >= chg->qbg_soc))) {
+		if (smooth_soc) {
+			smooth_soc = false;
+			chg->ui_soc--;
+			power_supply_changed(chg->batt_psy);
+			smooth_soc = true;
+			if(charger_log_enable)
+				pr_info("soc_work --");
+		}
+	}
+	return;
+}
+
+static void smooth_work(struct work_struct *work)
+{
+	smooth_soc = true;
+	pr_info("smooth_work %d",smooth_soc);
+	return;
+}
+
 
 static void smblite_lib_pl_enable_work(struct work_struct *work)
 {
@@ -4526,6 +4612,8 @@ int smblite_lib_init(struct smb_charger *chg)
 
 	mutex_init(&chg->dpdm_lock);
 	mutex_init(&chg->dpdm_pulse_lock);
+	mutex_init(&chg->cap_lock);
+
 	INIT_WORK(&chg->bms_update_work, bms_update_work);
 	INIT_WORK(&chg->jeita_update_work, jeita_update_work);
 	INIT_DELAYED_WORK(&chg->icl_change_work, smblite_lib_icl_change_work);
@@ -4537,6 +4625,9 @@ int smblite_lib_init(struct smb_charger *chg)
 					smblite_lib_typec_role_check_work);
 	INIT_DELAYED_WORK(&chg->pr_swap_detach_work,
 					smblite_lib_pr_swap_detach_work);
+	INIT_DELAYED_WORK(&chg->soc_work, soc_work);
+	INIT_DELAYED_WORK(&chg->smooth_work, smooth_work);
+
 	chg->fake_capacity = -EINVAL;
 	chg->fake_batt_status = -EINVAL;
 	chg->sink_src_mode = UNATTACHED_MODE;
@@ -4609,6 +4700,8 @@ int smblite_lib_deinit(struct smb_charger *chg)
 {
 	switch (chg->mode) {
 	case PARALLEL_MASTER:
+		cancel_delayed_work_sync(&chg->soc_work);
+		cancel_delayed_work_sync(&chg->smooth_work);
 		cancel_work_sync(&chg->bms_update_work);
 		cancel_work_sync(&chg->jeita_update_work);
 		cancel_delayed_work_sync(&chg->icl_change_work);

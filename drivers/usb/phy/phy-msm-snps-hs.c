@@ -348,13 +348,15 @@ err_vdda33:
 static int msm_hsphy_enable_power(struct msm_hsphy *phy, bool on)
 {
 	int ret = 0;
+	static DEFINE_MUTEX(mutex_msm_hsphy_power);
+	mutex_lock(&mutex_msm_hsphy_power);
 
 	dev_dbg(phy->phy.dev, "%s turn %s regulators. power_enabled:%d\n",
 			__func__, on ? "on" : "off", phy->power_enabled);
 
 	if (phy->power_enabled == on) {
 		dev_dbg(phy->phy.dev, "PHYs' regulators are already ON.\n");
-		return 0;
+		goto exit_out;
 	}
 
 	ret = vdd_phy_enable_disable(phy, on);
@@ -374,11 +376,14 @@ static int msm_hsphy_enable_power(struct msm_hsphy *phy, bool on)
 	else
 		phy->power_enabled = false;
 
-	return ret;
+	goto exit_out;
 
 err_hs_reg:
 	dev_err(phy->phy.dev, "HSUSB PHY's regulators set/unset failed\n");
 	dev_err(phy->phy.dev, "Some or all HSUSB PHY's regulators are turned OFF\n");
+
+exit_out:
+	mutex_unlock(&mutex_msm_hsphy_power);
 	return ret;
 }
 
