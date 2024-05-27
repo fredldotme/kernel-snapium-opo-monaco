@@ -1,0 +1,44 @@
+name: kernel-snapium-opo-monaco
+version: "5.15"
+summary: kernel snap for the OnePlus Watch 2
+description: kernel snap for the OnePlus Watch 2
+grade: stable
+confinement: strict
+type: kernel
+build-base: core22
+architectures:
+  - build-on: arm64
+parts:
+ kernel:
+    plugin: kernel
+    source: .
+    kernel-kdefconfig: [ snapium_monaco_defconfig ]
+    kernel-image-target: Image
+    # kernel-compiler: clang
+    kernel-with-firmware: false
+    kernel-initrd-compression: lz4
+    kernel-compiler-parameters:
+      - W=1
+      - CROSS_COMPILE_ARM32=arm-linux-gnueabihf-
+    build-packages:
+      - clang
+      - flex
+      - bison
+      - binutils-aarch64-linux-gnu
+      - libc6-arm64-cross
+      - libc6-dev-arm64-cross
+      - crossbuild-essential-arm64
+      - crossbuild-essential-armhf
+      - python2
+      - python3
+      - libelf-dev
+      - libssl-dev
+    override-pull: |
+      craftctl default
+      env ARCH=arm64 ./scripts/kconfig/merge_config.sh -m arch/arm64/configs/vendor/snap.config arch/arm64/configs/gki_defconfig arch/arm64/configs/vendor/monaco_GKI.config kernel/configs/android-base.config kernel/configs/android-recommended.config arch/arm64/configs/vendor/snap.config
+      mv .config arch/arm64/configs/snapium_monaco_defconfig
+    override-build: |
+      ln -sf /usr/bin/python2.7 /usr/bin/python
+      mkdir -p $CRAFT_PART_INSTALL/lib/firmware
+      echo "# Empty on purpose" > $CRAFT_PART_INSTALL/lib/firmware/README.md
+      craftctl default
