@@ -2510,7 +2510,7 @@ int smblite_lib_set_prop_ship_mode(struct smb_charger *chg,
 				const int val)
 {
 	int rc;
-	extern set_shipmode_shutdown(int);
+	extern void set_shipmode_shutdown(int);
 	set_shipmode_shutdown(val);
 	pr_err("Set ship mode: %d!!\n", !!val);
 

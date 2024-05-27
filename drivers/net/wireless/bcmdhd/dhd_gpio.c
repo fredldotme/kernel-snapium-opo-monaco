@@ -96,7 +96,7 @@ dhd_wlan_set_reset(int onoff)
 }
 
 #ifdef MATCH_OPLUS_PLATFORM
-extern sdhci_msm_card_detect(int slot, unsigned long delay, bool present);
+extern void sdhci_msm_card_detect(int slot, unsigned long delay, bool present);
 #define SDHCI_BCM_SLOT 1
 #define CARD_DETECT_DELAY 0
 #endif

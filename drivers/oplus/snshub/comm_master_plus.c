@@ -893,7 +893,7 @@ static inline uint32_t spi_addr_rd(uint32_t addr) {
 	return switch_byte_order(SPI_ADDR_RD(addr));
 }
 
-static void enable_continuous_read()
+static void enable_continuous_read(void)
 {
 	unsigned int buf[2]={0};
 	int ret = 0;
