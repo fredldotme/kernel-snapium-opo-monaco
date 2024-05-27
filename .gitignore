@@ -82,6 +82,7 @@ modules.order
 # Snap directory (make snap-pkg)
 #
 /snap/
+*.snap
 
 #
 # tar directory (make tar*-pkg)
